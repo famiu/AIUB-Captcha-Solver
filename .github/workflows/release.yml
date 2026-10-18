@@ -1,0 +1,53 @@
+# Publishes a GitHub release for each version tag (v1.2.3): builds the
+# package, signs it for Firefox as an unlisted add-on on addons.mozilla.org
+# and attaches the signed .xpi and the .zip to the release.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # all tags, for the version check
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+
+      - name: Check the version
+        run: |
+          version=$(node -p 'require("./extension/manifest.json").version')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match manifest version $version"
+            exit 1
+          fi
+          previous=$(git tag --list 'v*' | grep -vxF "$GITHUB_REF_NAME" | sort -V | tail -n 1)
+          if [ -n "$previous" ] && [ "$(printf '%s\n' "$previous" "$GITHUB_REF_NAME" | sort -V | tail -n 1)" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::$GITHUB_REF_NAME is not newer than $previous"
+            exit 1
+          fi
+
+      - run: npx --yes web-ext@10 lint --source-dir extension --warnings-as-errors
+      - run: npx --yes web-ext@10 build --source-dir extension --artifacts-dir dist
+
+      - name: Sign for Firefox
+        run: npx --yes web-ext@10 sign --source-dir extension --artifacts-dir dist --channel unlisted
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+
+      - name: Create the release
+        run: gh release create "$GITHUB_REF_NAME" dist/*.xpi dist/*.zip --title "$GITHUB_REF_NAME" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
