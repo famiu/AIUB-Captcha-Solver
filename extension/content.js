@@ -1,6 +1,6 @@
 "use strict";
 
-// Finds the CaptchaMvc math captcha on the AIUB portal, reads it with
+// Finds the CaptchaMvc math captcha on the AIUB student portal, reads it with
 // AIUBCaptchaSolver and fills in the answer. Unreadable captchas are
 // refreshed a few times before giving up. The answer field is animated to
 // show each outcome.

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-A browser extension (Manifest V3, plain JavaScript, no build step) that solves the AIUB portal's math captcha with a CNN + BiLSTM CTC model, plus the PyTorch pipeline that trains it. `README.md` covers installing and building, and `training/README.md` covers training.
+A browser extension (Manifest V3, plain JavaScript, no build step) that solves the AIUB student portal's math captcha with a CNN + BiLSTM CTC model, plus the PyTorch pipeline that trains it. `README.md` covers installing and building, and `training/README.md` covers training.
 
 ## Commands
 
