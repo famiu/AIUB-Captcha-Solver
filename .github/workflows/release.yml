@@ -48,6 +48,8 @@ jobs:
           WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
 
       - name: Create the release
-        run: gh release create "$GITHUB_REF_NAME" dist/*.xpi dist/*.zip --title "$GITHUB_REF_NAME" --generate-notes
+        run: |
+          mv dist/*.xpi "dist/aiub_captcha_solver-${GITHUB_REF_NAME#v}.xpi"
+          gh release create "$GITHUB_REF_NAME" dist/*.xpi dist/*.zip --title "$GITHUB_REF_NAME" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
