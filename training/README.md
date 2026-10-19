@@ -38,7 +38,7 @@ Training uses a CUDA GPU when PyTorch finds one and the CPU otherwise. Run any s
 Train a candidate model on every labelled captcha except the held-out ones, and measure it:
 
 ```sh
-python train.py out/model.pt --seed 11
+python train.py out/model.pt --seed 12
 python export.py out/model.pt --out out/model.js
 
 python dump_real.py out/eval.bin
@@ -54,7 +54,7 @@ python train.py out/final.pt --init out/model.pt --train-on-eval --steps 4692 --
 python export.py out/final.pt
 ```
 
-These commands built the released model. Its first stage scores 495 correct, 1 wrong and 19 refreshed out of 515 held-out captchas. Results on a GPU are not bit-for-bit reproducible, even with `--seed`.
+These commands built the released model. Its first stage scores 501 correct, 0 wrong and 14 refreshed out of 515 held-out captchas. Results on a GPU are not bit-for-bit reproducible, even with `--seed`.
 
 ## Adding training data
 
