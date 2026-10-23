@@ -41,55 +41,66 @@ var AIUBCaptchaSolver = (function () {
     return layers;
   }
 
-  // 3x3 convolution, padding 1, followed by ReLU. Input/output are CHW.
-  function conv3x3Relu(input, inC, h, w, layer) {
+  // 3x3 convolution (padding 1), ReLU and ph x pw max-pool in one pass.
+  // Input/output are CHW. Output channels are computed four at a time, one
+  // row at a time, so each input value read feeds twelve multiply-adds, and
+  // each row is pooled as soon as it is done.
+  function convReluPool(input, inC, h, w, layer, ph, pw) {
     const outC = layer.shape[0];
-    const out = new Float32Array(outC * h * w);
+    if (outC % 4) throw new Error(`${outC} output channels is not a multiple of 4`);
+    const oh = Math.floor(h / ph);
+    const ow = Math.floor(w / pw);
+    // The input with a border of zeros, so the inner loop needs no bounds checks.
+    const rowLen = w + 2;
+    const planeLen = (h + 2) * rowLen;
+    const padded = new Float32Array(inC * planeLen);
+    for (let c = 0; c < inC; c++) {
+      for (let y = 0; y < h; y++) {
+        padded.set(input.subarray((c * h + y) * w, (c * h + y + 1) * w), c * planeLen + (y + 1) * rowLen + 1);
+      }
+    }
+    // Starting the pool at 0 applies the ReLU.
+    const out = new Float32Array(outC * oh * ow);
+    const acc = new Float32Array(4 * w);
     const kw = layer.w;
-    for (let o = 0; o < outC; o++) {
-      const plane = out.subarray(o * h * w, (o + 1) * h * w);
-      plane.fill(layer.bias[o]);
-      for (let c = 0; c < inC; c++) {
-        const src = input.subarray(c * h * w, (c + 1) * h * w);
-        const k = (o * inC + c) * 9;
-        for (let ky = 0; ky < 3; ky++) {
-          const dy = ky - 1;
-          const y0 = Math.max(0, -dy);
-          const y1 = Math.min(h, h - dy);
-          for (let kx = 0; kx < 3; kx++) {
-            const wt = kw[k + ky * 3 + kx];
-            if (wt === 0) continue;
-            const dx = kx - 1;
-            const x0 = Math.max(0, -dx);
-            const x1 = Math.min(w, w - dx);
-            for (let y = y0; y < y1; y++) {
-              const ro = y * w;
-              const ri = (y + dy) * w + dx;
-              for (let x = x0; x < x1; x++) plane[ro + x] += wt * src[ri + x];
+    const kStride = inC * 9;
+    for (let o = 0; o < outC; o += 4) {
+      // Rows past the last full pooling window are never used.
+      for (let y = 0; y < oh * ph; y++) {
+        for (let j = 0; j < 4; j++) acc.fill(layer.bias[o + j], j * w, (j + 1) * w);
+        for (let c = 0; c < inC; c++) {
+          for (let ky = 0; ky < 3; ky++) {
+            const k = o * kStride + c * 9 + ky * 3;
+            const a0 = kw[k], a1 = kw[k + 1], a2 = kw[k + 2];
+            const b0 = kw[k + kStride], b1 = kw[k + kStride + 1], b2 = kw[k + kStride + 2];
+            const c0 = kw[k + 2 * kStride], c1 = kw[k + 2 * kStride + 1], c2 = kw[k + 2 * kStride + 2];
+            const d0 = kw[k + 3 * kStride], d1 = kw[k + 3 * kStride + 1], d2 = kw[k + 3 * kStride + 2];
+            const r = c * planeLen + (y + ky) * rowLen;
+            let s0 = padded[r];
+            let s1 = padded[r + 1];
+            for (let x = 0; x < w; x++) {
+              const s2 = padded[r + x + 2];
+              acc[x] += a0 * s0 + a1 * s1 + a2 * s2;
+              acc[w + x] += b0 * s0 + b1 * s1 + b2 * s2;
+              acc[2 * w + x] += c0 * s0 + c1 * s1 + c2 * s2;
+              acc[3 * w + x] += d0 * s0 + d1 * s1 + d2 * s2;
+              s0 = s1;
+              s1 = s2;
             }
           }
         }
-      }
-      for (let i = 0; i < plane.length; i++) if (plane[i] < 0) plane[i] = 0;
-    }
-    return out;
-  }
-
-  function maxPool(input, c, h, w, ph, pw) {
-    const oh = Math.floor(h / ph);
-    const ow = Math.floor(w / pw);
-    const out = new Float32Array(c * oh * ow);
-    for (let ch = 0; ch < c; ch++) {
-      for (let y = 0; y < oh; y++) {
-        for (let x = 0; x < ow; x++) {
-          let m = -Infinity;
-          for (let dy = 0; dy < ph; dy++) {
+        const py = Math.floor(y / ph);
+        for (let j = 0; j < 4; j++) {
+          const row = acc.subarray(j * w, (j + 1) * w);
+          const base = ((o + j) * oh + py) * ow;
+          for (let x = 0; x < ow; x++) {
+            let m = out[base + x];
             for (let dx = 0; dx < pw; dx++) {
-              const v = input[(ch * h + y * ph + dy) * w + x * pw + dx];
+              const v = row[x * pw + dx];
               if (v > m) m = v;
             }
+            out[base + x] = m;
           }
-          out[(ch * oh + y) * ow + x] = m;
         }
       }
     }
@@ -171,7 +182,7 @@ var AIUBCaptchaSolver = (function () {
     let ch = 1;
     for (const [name, ph, pw] of CONVS) {
       const layer = layers[name];
-      p = maxPool(conv3x3Relu(p.data, ch, p.h, p.w, layer), layer.shape[0], p.h, p.w, ph, pw);
+      p = convReluPool(p.data, ch, p.h, p.w, layer, ph, pw);
       ch = layer.shape[0];
     }
     const x = p.data;
