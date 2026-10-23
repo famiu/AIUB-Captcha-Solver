@@ -1,6 +1,8 @@
 # Publishes a GitHub release for each version tag (v1.2.3): builds the
 # package, signs it for Firefox as an unlisted add-on on addons.mozilla.org
-# and attaches the signed .xpi and the .zip to the release.
+# and attaches the signed .xpi, the .zip and updates.json to the release.
+# Firefox finds new versions through updates.json of the latest release
+# (update_url in the manifest).
 name: Release
 
 on:
@@ -38,7 +40,7 @@ jobs:
             exit 1
           fi
 
-      - run: npx --yes web-ext@10 lint --source-dir extension --warnings-as-errors
+      - run: npx --yes web-ext@10 lint --source-dir extension --self-hosted --warnings-as-errors
       - run: npx --yes web-ext@10 build --source-dir extension --artifacts-dir dist
 
       - name: Sign for Firefox
@@ -49,7 +51,21 @@ jobs:
 
       - name: Create the release
         run: |
-          mv dist/*.xpi "dist/aiub_captcha_solver-${GITHUB_REF_NAME#v}.xpi"
-          gh release create "$GITHUB_REF_NAME" dist/*.xpi dist/*.zip --title "$GITHUB_REF_NAME" --generate-notes
+          xpi="aiub_captcha_solver-${GITHUB_REF_NAME#v}.xpi"
+          mv dist/*.xpi "dist/$xpi"
+          XPI="$xpi" node -e '
+            const crypto = require("crypto");
+            const fs = require("fs");
+            const { version, browser_specific_settings: { gecko } } = require("./extension/manifest.json");
+            const { XPI, GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_REF_NAME } = process.env;
+            const hash = crypto.createHash("sha256").update(fs.readFileSync(`dist/${XPI}`)).digest("hex");
+            const update = {
+              version,
+              update_link: `${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${XPI}`,
+              update_hash: `sha256:${hash}`,
+            };
+            fs.writeFileSync("dist/updates.json", JSON.stringify({ addons: { [gecko.id]: { updates: [update] } } }, null, 2) + "\n");
+          '
+          gh release create "$GITHUB_REF_NAME" dist/*.xpi dist/*.zip dist/updates.json --title "$GITHUB_REF_NAME" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}

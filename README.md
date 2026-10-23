@@ -33,7 +33,7 @@ Download the latest release from the [Releases](https://github.com/famiu/AIUB-Ca
 
 Chrome for Android does not support extensions.
 
-Installed copies do not update themselves. To update, install the new release the same way.
+From version 0.2.0 on, Firefox checks for new releases and installs them by itself. Older versions in Firefox, and installs in Chromium-based browsers, do not update themselves: to update, install the new release the same way.
 
 ## Usage
 

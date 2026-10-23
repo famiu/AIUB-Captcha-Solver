@@ -16,4 +16,4 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: lts/*
-      - run: npx --yes web-ext@10 lint --source-dir extension --warnings-as-errors
+      - run: npx --yes web-ext@10 lint --source-dir extension --self-hosted --warnings-as-errors
