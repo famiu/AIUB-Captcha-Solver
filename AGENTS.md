@@ -7,7 +7,7 @@ A browser extension (Manifest V3, plain JavaScript, no build step) that solves t
 From the repository root:
 
 ```sh
-npx web-ext@10 lint --source-dir extension    # must report 0 errors, 0 warnings, 0 notices
+npx web-ext@10 lint --source-dir extension --self-hosted    # must report 0 errors, 0 warnings, 0 notices
 ```
 
 From `training/`, with the virtual environment from `training/README.md` active:
